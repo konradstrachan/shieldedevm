@@ -109,6 +109,21 @@ contract RockPaperScissors is ShieldedRPC {
         return false;
     }
 
+    function hasWonOpt(euint8 choice1, euint8 choice2) internal returns (bool) {
+        // p1 - p2 + 3 % 3 == 1 means player1 won, else player 2
+        ebool p1Won = 
+            TFHE.eq(
+                TFHE.rem(
+                    TFHE.sub(
+                        TFHE.add(
+                            choice1,
+                            TFHE.asEuint8(3)),
+                        choice2),
+                    3),
+                TFHE.asEuint8(1));
+        return TFHE.decrypt(p1Won) == true;
+    }
+
     function hackState() public {
         playerChoices[player1] = TFHE.asEuint8(1);
         playerChoices[player2] = TFHE.asEuint8(3);
@@ -119,14 +134,14 @@ contract RockPaperScissors is ShieldedRPC {
     }
 
     function hasPlayer1Won() internal view returns (bool) {
-        return hasWon(playerChoices[player1], playerChoices[player2]);
+        return hasWonOpt(playerChoices[player1], playerChoices[player2]);
     }
 
     function determineWinner() internal returns (uint8) {
         if (areMovesSame()) {
             // It's a draw, reset
-            playerChoices[player1] = TFHE.asEuint8(0);
-            playerChoices[player2] = TFHE.asEuint8(0);
+            playerChoices[player1] = TFHE.NIL8;
+            playerChoices[player2] = TFHE.NIL8;
             notifyWinner(0);
             return 0;
         }

@@ -12,7 +12,7 @@ contract RockPaperScissors is ShieldedRPC {
     mapping(address => euint8) public playerChoices;
 
     modifier gameNotFinished() {
-        require(winner != address(0), "The game has already finished");
+        require(winner == address(0), "The game has already finished");
         _;
     }
 
@@ -32,6 +32,26 @@ contract RockPaperScissors is ShieldedRPC {
         // Simple example only accepts a single command Id:1, reject anything other than this
         require(TFHE.decrypt(TFHE.lt(TFHE.asEuint8(encryptedId), TFHE.asEuint8(1))), "Invalid RPC operation");
         makeChoice(encryptedParam, context);
+    }
+
+    function makeChoiceEnc(euint8 encryptedChoice, address player) internal gameNotFinished {
+        require(
+            player == player1 || player == player2,
+            "Player not part of game"
+        );
+
+        require(!TFHE.isInitialized(playerChoices[player]), "Player already made a choice");
+
+        euint8 choice = encryptedChoice;
+        require(isValidChoice(choice), "Invalid choice");
+
+        playerChoices[player] = choice;
+
+        if (   TFHE.isInitialized(playerChoices[player1])
+            && TFHE.isInitialized(playerChoices[player2]) ) {
+            // Wrap up game and signal winner
+            determineWinner();
+        }
     }
 
     function makeChoice(bytes calldata encryptedChoice, address player) internal gameNotFinished {
@@ -54,6 +74,10 @@ contract RockPaperScissors is ShieldedRPC {
         }
     }
 
+    function notifyWinner(uint8 winner_id) internal {
+        sendMessage(scrollContract, abi.encodePacked(player1, player2, uint256(winner_id)));
+    }
+
     function isValidChoice(euint8 choice) internal view returns (bool) {
         // Use sheilded enum range 1-3 to signify choice
         return TFHE.decrypt(TFHE.gt(choice, TFHE.asEuint8(0))) 
@@ -62,34 +86,62 @@ contract RockPaperScissors is ShieldedRPC {
 
     function hasWon(euint8 choice1, euint8 choice2) internal view returns (bool) {
         bool p1rock = TFHE.decrypt(TFHE.eq(choice1, TFHE.asEuint8(1)));
-        bool p1paper = TFHE.decrypt(TFHE.eq(choice1, TFHE.asEuint8(2)));
-        bool p1scissors = TFHE.decrypt(TFHE.eq(choice1, TFHE.asEuint8(3)));
-
-        bool p2rock = TFHE.decrypt(TFHE.eq(choice2, TFHE.asEuint8(1)));
-        bool p2paper = TFHE.decrypt(TFHE.eq(choice2, TFHE.asEuint8(2)));
         bool p2scissors = TFHE.decrypt(TFHE.eq(choice2, TFHE.asEuint8(3)));
 
-        return
-            (p1rock && p2scissors) ||
-            (p1paper && p2rock) ||
-            (p1scissors && p2paper);
+        if (p1rock && p2scissors) {
+            return true;
+        }
+
+        bool p1paper = TFHE.decrypt(TFHE.eq(choice1, TFHE.asEuint8(2)));
+        bool p2rock = TFHE.decrypt(TFHE.eq(choice2, TFHE.asEuint8(1)));
+
+        if (p1paper && p2rock) {
+            return true;
+        }
+
+        bool p1scissors = TFHE.decrypt(TFHE.eq(choice1, TFHE.asEuint8(3)));
+        bool p2paper = TFHE.decrypt(TFHE.eq(choice2, TFHE.asEuint8(2)));
+        
+        if (p1scissors && p2paper) {
+            return true;
+        }
+
+        return false;
     }
 
-    function determineWinner() internal {
-        if (TFHE.decrypt(TFHE.eq(playerChoices[player1], playerChoices[player2]))) {
+    function hackState() public {
+        playerChoices[player1] = TFHE.asEuint8(1);
+        playerChoices[player2] = TFHE.asEuint8(3);
+    }
+
+    function areMovesSame() internal view returns (bool) {
+        return TFHE.decrypt(TFHE.eq(playerChoices[player1], playerChoices[player2]));
+    }
+
+    function hasPlayer1Won() internal view returns (bool) {
+        return hasWon(playerChoices[player1], playerChoices[player2]);
+    }
+
+    function determineWinner() internal returns (uint8) {
+        if (areMovesSame()) {
             // It's a draw, reset
             playerChoices[player1] = TFHE.asEuint8(0);
             playerChoices[player2] = TFHE.asEuint8(0);
-
-            sendMessage(scrollContract, abi.encodePacked(player1, player2, uint256(0)));
-        } else if (hasWon(playerChoices[player1], playerChoices[player2])) {
+            notifyWinner(0);
+            return 0;
+        }
+        
+        if (hasPlayer1Won()) {
             // Player 1 wins
             winner = player1;
-            sendMessage(scrollContract, abi.encodePacked(player1, player2, uint256(1)));
-        } else {
-            // Player 2 wins
-            winner = player2;
-            sendMessage(scrollContract, abi.encodePacked(player1, player2, uint256(2)));
+            notifyWinner(1);
+            return 1;
         }
+
+        // else
+        // Player 2 wins
+        winner = player2;
+        notifyWinner(2);
+        return 2;
     }
 }

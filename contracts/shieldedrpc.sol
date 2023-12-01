@@ -42,6 +42,8 @@ abstract contract ShieldedRPC is EIP712 {
     /////////////////////////////////////////////
     // Public functions
 
+    // Handles encrypted message from RPC and calls
+    // message handler in derrived contract
     function acceptMessage(uint256 eventId, uint256 param, bytes memory signature) public {
         Message memory message = Message(eventId, param);
         address signer = _verify(message, signature);
@@ -49,6 +51,8 @@ abstract contract ShieldedRPC is EIP712 {
         handleMessage(eventId, param, signer);
     }
 
+    // Handles encrypted message from RPC and calls
+    // message handler in derrived contract
     function acceptEncryptedMessage(bytes calldata encryptedId, bytes calldata encryptedParam, bytes memory signature) public {
         Message memory message = Message(eventId, param);
         address signer = _verify(message, signature);
@@ -56,9 +60,11 @@ abstract contract ShieldedRPC is EIP712 {
         handleEncryptedMessage(encryptedId, encryptedParam, signer);
     }
 
+    // Handles sending of messages on behalf of contract logic to unshielded
+    // contract handling events on Scroll (or elsewhere that is supported by Hyperlane)
     function sendMessage(address destination, bytes memory data) public {
         uint32 scrollDomain = 534351;
-        // TODO pay for messageby sending some native tokens along with the execution
+        // TODO pay for message by sending some native tokens along with the execution
         mailbox.dispatch(
             scrollDomain,
             _addressToBytes32(destination),
